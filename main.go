@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"math/rand"
-	"reflect"
+	"os"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type sessionState int
@@ -17,9 +19,18 @@ const (
 )
 
 var qna = map[string]string{"what's 1 + 1": "2", "is red a warm colour?": "yes", "what is the best snack": "popcorn"}
+var (
+	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+	boxstyle  = lipgloss.NewStyle().
+			Align(lipgloss.Center).
+			Border(lipgloss.RoundedBorder(), true).
+			BorderForeground(highlight).
+			Padding(0, 1)
+)
 
 type model struct {
 	state    sessionState
+	viewport viewport.Model
 	question string
 	answer   string
 }
@@ -32,7 +43,10 @@ func (m model) getQNACmd() tea.Msg {
 }
 
 func New() model {
-	return model{state: questionState, question: "", answer: ""}
+	m := model{state: questionState, question: "a question", answer: "an answer"}
+	m.viewport = viewport.New(8, 8)
+	m.viewport.SetContent(m.question)
+	return m
 }
 
 func (m model) Init() tea.Cmd {
@@ -45,9 +59,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "enter" {
 			if m.state == questionState {
 				m.state = answerState
+				m.viewport.SetContent(m.answer)
 			} else {
 				m.state = questionState
+				m.viewport.SetContent(m.question)
 			}
+		}
+		if msg.String() == "ctrl+c" || msg.String() == "q" {
+			return m, tea.Quit
 		}
 		if msg.String() == "n" {
 			// refresh new question and answer
@@ -56,8 +75,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func View() {}
+func (m model) View() string {
+	return boxstyle.Render(m.viewport.View())
+}
 
 func main() {
-	fmt.Println("do things")
+	p := tea.NewProgram(
+		New(),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+	if err := p.Start(); err != nil {
+		fmt.Println("could not run program:", err)
+		os.Exit(1)
+	}
 }
