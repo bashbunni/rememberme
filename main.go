@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -12,6 +13,7 @@ import (
 )
 
 type sessionState int
+type QNAMsg string
 
 const (
 	answerState sessionState = iota
@@ -23,7 +25,7 @@ var (
 	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
 	boxstyle  = lipgloss.NewStyle().
 			Align(lipgloss.Center).
-			Border(lipgloss.RoundedBorder(), true).
+			Border(lipgloss.DoubleBorder(), true).
 			BorderForeground(highlight).
 			Padding(0, 1)
 )
@@ -35,15 +37,18 @@ type model struct {
 	answer   string
 }
 
-type QNAMsg string
+func getRandomQuestion(m map[string]string) string {
+	rand.Seed(time.Now().UnixNano())
+	return reflect.ValueOf(m).MapKeys()[rand.Intn(len(m))].String()
+}
 
 func (m model) getQNACmd() tea.Msg {
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-	return QNAMsg("hello")
+	return QNAMsg(getRandomQuestion(qna))
 }
 
 func New() model {
-	m := model{state: questionState, question: "a question", answer: "an answer"}
+	q := getRandomQuestion(qna)
+	m := model{state: questionState, question: q, answer: qna[q]}
 	m.viewport = viewport.New(8, 8)
 	m.viewport.SetContent(m.question)
 	return m
@@ -70,7 +75,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "n" {
 			// refresh new question and answer
+			return m, m.getQNACmd
 		}
+	case QNAMsg:
+		m.question = string(msg)
+		m.answer = qna[string(msg)]
+		m.viewport.SetContent(m.question)
 	}
 	return m, nil
 }
