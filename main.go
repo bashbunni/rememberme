@@ -28,6 +28,8 @@ var (
 			Border(lipgloss.DoubleBorder(), true).
 			BorderForeground(highlight).
 			Padding(0, 1)
+	width  = 96
+	subtle = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
 )
 
 type model struct {
@@ -86,7 +88,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	return boxstyle.Render(m.viewport.View())
+	return lipgloss.Place(width, 9,
+		lipgloss.Center, lipgloss.Center,
+		boxstyle.Render(m.viewport.View()),
+		lipgloss.WithWhitespaceChars("猫咪"),
+		lipgloss.WithWhitespaceForeground(subtle),
+	)
 }
 
 func main() {
