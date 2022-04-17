@@ -12,8 +12,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type sessionState int
-type QNAMsg string
+type (
+	sessionState int
+	QNAMsg       string
+)
 
 const (
 	answerState sessionState = iota
@@ -27,7 +29,8 @@ var (
 			Align(lipgloss.Center).
 			Border(lipgloss.DoubleBorder(), true).
 			BorderForeground(highlight).
-			Padding(0, 1)
+			Padding(0, 1).
+			Width(16)
 	width  = 96
 	subtle = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
 )
