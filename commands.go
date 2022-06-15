@@ -13,24 +13,6 @@ type KVListMsg struct {
 	kvs map[string]string
 }
 
-func getRandomQuestion(m map[string]string) string {
-	rand.Seed(time.Now().UnixNano())
-	r := rand.Intn(len(m))
-	j := 0
-	for k := range m {
-		if j == r {
-			return k
-		}
-		j++
-	}
-	panic("unreachable")
-}
-
-func (m model) getQNACmd() tea.Msg {
-	question := getRandomQuestion(m.qna)
-	return QNAMsg(question)
-}
-
 type (
 	GetAnswerMsg  string // hold question
 	PlsRefreshMsg struct{}
@@ -38,6 +20,11 @@ type (
 		err error
 	}
 )
+
+func (m model) getQNACmd() tea.Msg {
+	question := getRandomQuestion(m.qna)
+	return QNAMsg(question)
+}
 
 func (m model) addQuestionCmd() tea.Msg {
 	question := m.input.Value()
@@ -97,4 +84,19 @@ func (m model) createKVListCmd() tea.Msg {
 		return ErrMsg{err}
 	}
 	return KVListMsg{kvs}
+}
+
+/* helpers */
+
+func getRandomQuestion(questions map[string]string) string {
+	rand.Seed(time.Now().UnixNano())
+	r := rand.Intn(len(questions))
+	j := 0
+	for question := range questions {
+		if j == r {
+			return question
+		}
+		j++
+	}
+	panic("unreachable")
 }
