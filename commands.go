@@ -33,9 +33,6 @@ func (m model) addQuestionCmd() tea.Msg {
 		// TODO: handle errors in tui
 		return ErrMsg{err}
 	}
-	m.input.SetValue("")
-	m.input.Prompt = "Answer: "
-	m.input.Placeholder = "your answer here..."
 	return GetAnswerMsg(question)
 }
 
@@ -98,5 +95,5 @@ func getRandomQuestion(questions map[string]string) string {
 		}
 		j++
 	}
-	panic("unreachable")
+	return "you don't have any questions!"
 }
