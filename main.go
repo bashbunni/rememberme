@@ -9,18 +9,16 @@ import (
 )
 
 func main() {
-	if len(os.Getenv("DEBUG")) > 0 {
-		if f, err := tea.LogToFile("debug.log", "help"); err != nil {
-			fmt.Println("Couldn't open a file for logging:", err)
-			os.Exit(1)
-		} else {
-			defer func() {
-				err = f.Close()
-				if err != nil {
-					log.Fatal(err)
-				}
-			}()
-		}
+	if f, err := tea.LogToFile("debug.log", "help"); err != nil {
+		fmt.Println("Couldn't open a file for logging:", err)
+		os.Exit(1)
+	} else {
+		defer func() {
+			err = f.Close()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}()
 	}
 	p := tea.NewProgram(
 		New(),

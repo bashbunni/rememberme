@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 
+	"github.com/pkg/errors"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,9 +13,9 @@ import (
 )
 
 type (
-	sessionState int
-	QNAMsg       string
-	inputState   int
+	sessionState    int
+	newFlashcardMsg string
+	inputState      int
 )
 
 const (
@@ -23,9 +25,6 @@ const (
 	answerInput
 )
 
-// mock data
-var qna = map[string]string{"what's 1 + 1": "2", "is red a warm colour?": "yes", "what is the best snack": "popcorn"}
-
 // styles
 var (
 	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
@@ -34,42 +33,44 @@ var (
 			Border(lipgloss.DoubleBorder(), true).
 			BorderForeground(highlight).
 			Padding(0, 1).
-			Width(16)
+			Width(25)
 	width     = 96
 	subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
 	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render
 )
 
 type model struct {
-	qna            map[string]string
+	keys           [][]byte
 	state          sessionState
-	question       string
-	answer         string
+	question       []byte
+	answer         []byte
 	kv             *kv.KV
 	viewport       viewport.Model
 	input          textinput.Model
 	inputState     inputState
 	addingQuestion string
+	error          error
 }
 
 func New() model {
-	kv, err := kv.OpenWithDefaults("my-cute-db")
+	kv, err := kv.OpenWithDefaults("flashcards")
 	if err != nil {
 		log.Fatal(err)
 	}
-	m := model{state: questionState, kv: kv}
-	//	msg := m.createKVList()
-	//	m.qna = msg.(KVListMsg).kvs
-	m.inputState = questionInput
-	// init questions
-	m.qna = qna
-	q := getRandomQuestion(qna)
-	log.Println(q)
+	m := model{state: questionState, inputState: questionInput, kv: kv}
+	if m.keys, err = kv.Keys(); err != nil {
+		m.error = errors.Wrap(err, "unable to get keys from charm-kv")
+	}
+	q := m.getRandomQuestion()
+	log.Println(string(q))
 	m.question = q
-	m.answer = qna[q]
+	m.answer, err = m.kv.Get(q)
+	if err != nil {
+		m.error = errors.Wrap(err, "unable to get answer from charm-kv")
+	}
 	// init nested models
 	m.viewport = viewport.New(8, 8)
-	m.viewport.SetContent(m.question)
+	m.viewport.SetContent(string(m.question))
 	input := textinput.New()
 	input.Prompt = "Question: "
 	input.Placeholder = "your question here..."
@@ -87,27 +88,35 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
+	var err error
 	switch msg := msg.(type) {
-	case KVListMsg:
-		m.qna = msg.kvs
-	case PlsRefreshMsg:
-		cmd = m.createKVListCmd
-	case GetAnswerMsg:
+	case syncKeysMsg:
+		m.keys, err = m.kv.Keys()
+		if err != nil {
+			m.error = errors.Wrap(err, "unable to get keys from charm-kv")
+		}
+		cmds = append(cmds, m.getAnswerCmd)
+	case inputAnswerMsg:
 		m.input.SetValue("")
 		m.input.Prompt = "Answer: "
 		m.input.Placeholder = "your answer here..."
 		m.input.Focus()
 		m.addingQuestion = string(msg)
+	case answerMsg:
+		m.question = []byte(m.addingQuestion)
+		m.answer = []byte(msg)
+		m.inputState = questionInput
 	case tea.KeyMsg:
 		if m.input.Focused() {
 			if m.inputState == questionInput {
 				if msg.String() == "enter" {
-					// TODO: add Cmd for setting question, then msg prompts for answer
 					m.inputState = answerInput
 					cmds = append(cmds, m.addQuestionCmd)
 				}
 			} else {
 				if msg.String() == "enter" {
+					m.input.SetValue("")
+					m.input.Blur()
 					cmds = append(cmds, m.addAnswerCmd(m.addingQuestion))
 				}
 			}
@@ -118,15 +127,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "enter" {
 				if m.state == questionState {
 					m.state = answerState
-					m.viewport.SetContent(m.answer)
+					m.viewport.SetContent(string(m.answer))
 				} else {
 					m.state = questionState
-					m.viewport.SetContent(m.question)
+					m.viewport.SetContent(string(m.question))
 				}
 			}
 			if msg.String() == "n" {
 				// refresh new question and answer
-				cmd = m.getQNACmd
+				cmd = m.getFlashcardCmd
 			}
 			if msg.String() == "c" {
 				m.input.Focus()
@@ -136,10 +145,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-	case QNAMsg:
-		m.question = string(msg)
-		m.answer = qna[string(msg)]
-		m.viewport.SetContent(m.question)
+	case newFlashcardMsg:
+		m.question = []byte(msg)
+		m.answer, err = m.kv.Get(m.question)
+		if err != nil {
+			m.error = errors.Wrap(err, "unable to get new answer")
+		}
+		m.viewport.SetContent(string(m.question))
 	}
 
 	cmds = append(cmds, cmd)
@@ -147,22 +159,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func showHelpMenu() string {
-	return helpStyle("\n ↑/↓: navigate  • esc: back • c: add question • n: next • q: quit\n")
+	return helpStyle("↑/↓: navigate  • c: add question • n: next • q: quit\n")
 }
 
 func (m model) View() string {
+	// TODO: make styling not garbo
+	// TODO: add errors to View
 	if m.input.Focused() {
-		return lipgloss.JoinVertical(lipgloss.Center, lipgloss.Place(width, 9,
-			lipgloss.Center, lipgloss.Center,
-			boxstyle.Render(m.viewport.View()),
-			lipgloss.WithWhitespaceChars("猫咪"),
-			lipgloss.WithWhitespaceForeground(subtle)),
-			lipgloss.JoinVertical(lipgloss.Center, m.input.View(), showHelpMenu()))
+		return lipgloss.JoinVertical(
+			lipgloss.Center,
+			lipgloss.PlaceVertical(9,
+				lipgloss.Center,
+				boxstyle.Render(m.viewport.View()),
+				lipgloss.WithWhitespaceChars("猫咪"),
+				lipgloss.WithWhitespaceForeground(subtle)),
+			m.input.View(), showHelpMenu())
 	} else {
-		return lipgloss.JoinVertical(lipgloss.Center, lipgloss.Place(width, 9,
-			lipgloss.Center, lipgloss.Center,
-			boxstyle.Render(m.viewport.View()),
-			lipgloss.WithWhitespaceChars("猫咪"),
-			lipgloss.WithWhitespaceForeground(subtle)), showHelpMenu())
+		return lipgloss.JoinVertical(
+			lipgloss.Center,
+			lipgloss.Place(width, 9,
+				lipgloss.Center, lipgloss.Center,
+				boxstyle.Render(m.viewport.View()),
+				lipgloss.WithWhitespaceChars("猫咪"),
+				lipgloss.WithWhitespaceForeground(subtle)),
+			showHelpMenu())
 	}
 }
